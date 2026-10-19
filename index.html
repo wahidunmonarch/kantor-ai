@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kantor AI</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap">
+<style>
+:root{--bg:#0f1a2e;--line:#3a4d70;--text:#e8edf6;--mute:#93a1bb;--work:#4cc9c0;--wait:#f2b84b;--idle:#9db4ff;--off:#5b6477;font-family:"Bricolage Grotesque",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}
+header{display:flex;gap:16px;align-items:baseline;padding:16px 20px;flex-wrap:wrap}
+h1{margin:0;font-size:22px;font-weight:800}
+.mode{font-size:13px;padding:3px 10px;border-radius:99px;background:#33405c;color:var(--wait)}.mode.live{color:var(--work)}
+main{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(280px,1fr);gap:16px;padding:0 20px 24px}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+.office{position:relative;aspect-ratio:560/312;container-type:inline-size;background:#0b1224;border:2px solid var(--line);border-radius:14px;overflow:hidden}
+#cv{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
+.lb{position:absolute;transform:translate(-50%,-100%);width:24cqw;text-align:center;pointer-events:none;z-index:2}
+.tag{font-size:max(9px,1.25cqw);font-weight:600;background:#0c1424d9;border-radius:99px;padding:1px 7px;display:inline-flex;gap:5px;align-items:center;white-space:nowrap}
+.tag i{width:7px;height:7px;border-radius:50%;background:var(--idle)}
+.lb[data-s=working] i{background:var(--work)}.lb[data-s=waiting] i{background:var(--wait)}.lb[data-s=stuck] i{background:#ef6461}.lb[data-s=offline] i{background:var(--off)}
+.bub{background:#fff;color:#14213a;font-size:max(9px,1.15cqw);line-height:1.25;border-radius:6px;padding:3px 6px;margin-bottom:3px}.bub[hidden]{display:none}
+aside{display:flex;flex-direction:column;gap:14px}
+.panel{background:#16233b;border:1px solid var(--line);border-radius:12px;padding:12px 14px}.panel h2{margin:0 0 8px;font-size:15px}
+.task{padding:8px 0;border-top:1px solid #26365494;font-size:13px}.task:first-of-type{border-top:0}
+.meta{color:var(--mute);font-size:12px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.bar{height:5px;background:#26365a;border-radius:9px;margin-top:5px;overflow:hidden}.bar b{display:block;height:100%;background:var(--work)}
+button,select,input{font:inherit;color:inherit}
+button{background:var(--work);color:#08202a;border:0;border-radius:7px;padding:4px 10px;font-weight:600;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--wait);outline-offset:2px}
+form{display:flex;gap:6px;flex-wrap:wrap}input,select{background:#0f1a2e;border:1px solid var(--line);border-radius:7px;padding:7px 9px}input{flex:1;min-width:140px}
+a{color:var(--work)}
+</style>
+</head>
+<body>
+<header><h1>Kantor AI</h1><span id="mode" class="mode"></span><span id="sum" style="color:var(--mute);font-size:14px"></span></header>
+<main>
+ <div id="office" class="office"><canvas id="cv" width="560" height="312"></canvas></div>
+ <aside>
+  <div class="panel"><h2>Beri perintah</h2>
+   <form id="f"><select id="who" aria-label="Agen"></select><input id="q" placeholder="mis. Buat poster promo diskon 50%" aria-label="Perintah"><button>Kirim tugas</button></form></div>
+  <div class="panel"><h2>Tugas</h2><div id="list"></div></div>
+ </aside>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const CFG={url:"https://aqqtcclerjrfvdueisbi.supabase.co",key:"sb_publishable_lyyIFPQ-Y2pQNF-Y4-OcMQ_4yRfFF48"};
+const demo=!CFG.url,$=id=>document.getElementById(id),now=()=>Date.now();
+const LABEL={queued:"Antre",running:"Dikerjakan",needs_approval:"Menunggu persetujuanmu",done:"Selesai",failed:"Gagal"};
+let agents=[],tasks=[],sb;
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ago=t=>{const s=Math.max(0,(now()-new Date(t))/1000|0);return s<60?s+" dtk lalu":s<3600?(s/60|0)+" mnt lalu":(s/3600|0)+" jam lalu"};
+// Status dihitung dari data nyata: heartbeat + tugas. Tidak ada status yang diketik manual.
+function st(a){
+ if(now()-new Date(a.last_heartbeat)>90000)return"offline";
+ const t=tasks.filter(x=>x.agent_id===a.id),u=x=>now()-new Date(x.updated_at||x.created_at);
+ if(t.some(x=>x.status==="needs_approval"))return"waiting";
+ if(t.some(x=>x.status==="running"&&u(x)>120000))return"stuck";
+ if(t.some(x=>x.status==="running"))return"working";
+ if(t.some(x=>(x.status==="done"||x.status==="failed")&&u(x)<60000))return"wrap";
+ return"idle";
+}
+/* ===== Dunia pixel-art isometrik berbasis petak ===== */
+const W=560,H=312,OX=224,OY=40,cv=$("cv"),g=cv.getContext("2d");g.imageSmoothingEnabled=false;
+const MAP=["#".repeat(20),"#aaaaa#bbbbb#dddddd#","#aaaaa#bbbbb#dddddd#","#aaaaa#bbbbb#dddddd#","#aaaaa#bbbbb#dddddd#","###.#####.#####.####",".".repeat(19)+"#","#"+".".repeat(18)+"#","####.#######.####.##","#cccccccc#eeeee#fff#","#cccccccc#eeeee#fff#","#cccccccc#eeeee#fff#","#cccccccc#eeeee#fff#","#".repeat(20)];
+const FL={a:["#6b4f3a","#5f4533"],b:["#4b5d73","#44546a"],c:["#4a4f7a","#434872"],d:["#3f6068","#385860"],e:["#7a5a45","#6e5039"],f:["#4a3a66","#42345c"],".":["#8c8f9c","#80838f"]};
+const iso=(x,y)=>[OX+(x-y)*16,OY+(x+y)*8];
+const flo=(i,j)=>{const c=MAP[j]&&MAP[j][i];return !!c&&c!=="#"};
+const sh=(c,f)=>"#"+[1,3,5].map(i=>Math.min(255,Math.round(parseInt(c.substr(i,2),16)*f)).toString(16).padStart(2,"0")).join("");
+function tile(c,cx,cy,col){c.fillStyle=col;for(let r=0;r<16;r++){const hw=(r<8?r+1:16-r)*2;c.fillRect(cx-hw,cy-8+r,hw*2,1)}}
+function block(c,cx,cy,h,col,win){
+ const L=sh(col,.8),R=sh(col,.62),ty=cy-8;
+ for(let d=0;d<16;d++){const yl=ty+8+(d>>1),yr=ty+16-(d>>1);
+  c.fillStyle=L;c.fillRect(cx-16+d,yl-h,1,h);c.fillStyle=R;c.fillRect(cx+d,yr-h,1,h);
+  if(win&&d>3&&d<12){c.fillStyle="#7fb3e8";c.fillRect(win==="L"?cx-16+d:cx+d,(win==="L"?yl:yr)-h+7,1,9)}}
+ tile(c,cx,cy-h,col);
+}
+const BG=document.createElement("canvas");BG.width=W;BG.height=H;const bg=BG.getContext("2d");
+const ITEMS=[],BLK=new Set();let T=0;
+MAP.forEach((row,j)=>[...row].forEach((ch,i)=>{const[cx,cy]=iso(i,j);
+ if(ch!=="#"){tile(bg,cx,cy,FL[ch][(i+j)%2]);return}
+ if(j===0||i===0)ITEMS.push({k:i+j,f:()=>block(g,cx,cy,28,"#d9dde8",(i+j)%2===0?(j===0?"L":"R"):null)});
+ else if(i===19||j===13)ITEMS.push({k:i+j,f:()=>block(g,cx,cy,6,"#6c7aa0")});
+ else ITEMS.push({k:i+j,f:()=>{g.globalAlpha=.55;block(g,cx,cy,9,"#cfe6ff");g.globalAlpha=1}});
+}));
+const FC={desk:["#9a6b43",8],chair:["#2b3352",4],sofa:["#b0586b",6],table:["#8a6240",6],shelf:["#7b6a52",20],vend:["#3b6fb3",18],arc:["#37428f",16],plant:["#6b4a2f",3]};
+const LIT={};
+[["desk",2,1],["desk",3,1],["pc",3,1,"ceo"],["chair",3,2],["sofa",5,3],["sofa",5,4],["plant",1,1],["plant",5,1],
+ ["desk",8,1],["desk",9,1],["pc",9,1,"bima"],["chair",9,2],["shelf",11,1],["shelf",11,2],["plant",7,1],
+ ["table",14,2],["table",15,2],["table",16,2],["table",14,3],["table",15,3],["table",16,3],["chair",14,1],["chair",15,1],["chair",16,1],["plant",18,4],
+ ["desk",2,10],["desk",3,10],["pc",3,10,"rina"],["chair",3,11],["desk",6,10],["desk",7,10],["pc",7,10,"dito"],["chair",7,11],["plant",1,9],["plant",8,9],["plant",8,12],
+ ["sofa",11,10],["sofa",12,10],["sofa",13,10],["table",12,11],["vend",14,9],["plant",10,12],["arc",16,9],["arc",18,9],["plant",16,12]
+].forEach(([t,x,y,id])=>{const[cx,cy]=iso(x,y);
+ if(t==="pc"){ITEMS.push({k:x+y+.05,f:()=>{const ty=cy-8;g.fillStyle="#10182c";g.fillRect(cx-5,ty-9,10,8);g.fillStyle=LIT[id]?"#63e6d8":"#1f2a44";g.fillRect(cx-4,ty-8,8,5);g.fillStyle="#10182c";g.fillRect(cx-1,ty-1,2,1)}});return}
+ if(t!=="chair")BLK.add(x+","+y);
+ ITEMS.push({k:x+y,f:()=>{block(g,cx,cy,FC[t][1],FC[t][0]);
+  if(t==="plant"){g.fillStyle="#3f9a5a";g.fillRect(cx-5,cy-12,10,9);g.fillStyle="#52b36f";g.fillRect(cx-3,cy-15,6,4)}
+  if(t==="arc"){g.fillStyle=Math.floor(T*3)%2?"#7dffb0":"#ff6fa8";g.fillRect(cx-6,cy-13,5,5)}
+  if(t==="vend"){g.fillStyle="#9fe3ff";g.fillRect(cx-6,cy-15,5,8)}}});
+});
+/* ===== Karyawan: tujuan, jalur (BFS), gerak halus ===== */
+const COL={bima:["#e85d5d","#2b1d14"],rina:["#8e6bff","#5a2a1a"],dito:["#f2b84b","#1a1a1a"],ceo:["#2f3548","#444"]};
+const SEAT={bima:[9,2],rina:[3,11],dito:[7,11]},WAIT=[[3,4],[2,4],[4,4]];
+const SPOTS=[[11,10,"s","phone"],[12,10,"s","phone"],[13,10,"s","phone"],[16,10,"n","play"],[17,10,"n","play"],[18,10,"n","play"]].map(s=>({k:"p"+s[0]+s[1],t:[s[0],s[1]],face:s[2],act:s[3]}));
+const E={},LB={};
+function bfs(sx,sy,gx,gy){
+ const K=(x,y)=>x+","+y,gk=K(gx,gy),prev={},q=[[sx,sy]];prev[K(sx,sy)]=null;
+ while(q.length){const[x,y]=q.shift();if(K(x,y)===gk)break;
+  for(const[dx,dy]of[[1,0],[-1,0],[0,1],[0,-1]]){const nx=x+dx,ny=y+dy,k=K(nx,ny);
+   if(k in prev||!flo(nx,ny)||(BLK.has(k)&&k!==gk))continue;prev[k]=[x,y];q.push([nx,ny])}}
+ if(!(gk in prev))return null;
+ const p=[];let c=[gx,gy];while(c&&!(c[0]===sx&&c[1]===sy)){p.unshift(c);c=prev[K(c[0],c[1])]}return p;
+}
+function evalA(a,i,tn){
+ const e=E[a.id]||(E[a.id]={x:0,y:0,vx:0,vy:0,path:[],mode:"stand",front:false,hidden:true,dest:null,init:false,lz:null}),s=st(a);e.s=s;let d;
+ if(s==="offline")d={k:"x",t:[0,6],act:"exit"};
+ else if(s==="waiting")d={k:"w"+i,t:WAIT[i%3],act:"stand",face:"s"};
+ else if(s==="idle"){if(!e.lz||tn>e.lz.until){const used=Object.values(E).filter(o=>o!==e&&o.lz).map(o=>o.lz.spot.k),fr=SPOTS.filter(p=>!used.includes(p.k));
+   e.lz={spot:fr[Math.random()*fr.length|0],until:tn+(20+Math.random()*25)*1000}}d=e.lz.spot}
+ else d={k:"seat",t:SEAT[a.id],act:"sit",face:"n"};
+ if(s!=="idle")e.lz=null;
+ if(!e.dest||e.dest.k!==d.k){e.dest=d;
+  if(!e.init){e.init=true;if(s==="offline"){e.hidden=true;return}e.x=d.t[0];e.y=d.t[1];e.path=[];e.hidden=false;return}
+  if(e.hidden&&d.act!=="exit"){e.x=0;e.y=6;e.hidden=false}
+  e.path=bfs(Math.round(e.x),Math.round(e.y),d.t[0],d.t[1])||[d.t];
+ }
+ e.lit=e.mode==="sit"&&s==="working";LIT[a.id]=e.lit;
+}
+function step(e,dt){
+ if(e.hidden||!e.dest)return;const gk=e.dest.t.join(",");
+ if(!e.path.length){e.mode=e.dest.act;e.front=e.dest.face==="s";if(e.mode==="exit")e.hidden=true;return}
+ const n=e.path[0],dx=n[0]-e.x,dy=n[1]-e.y,d=Math.hypot(dx,dy);e.mode="walk";
+ if(d<.1){e.x=n[0];e.y=n[1];e.path.shift();return}
+ const sp=1.7,k=Math.min(1,dt*8);e.vx+=(dx/d*sp-e.vx)*k;e.vy+=(dy/d*sp-e.vy)*k; // belok halus
+ const nx=e.x+e.vx*dt,ny=e.y+e.vy*dt,i=Math.round(nx),j=Math.round(ny),key=i+","+j;
+ if(flo(i,j)&&(!BLK.has(key)||key===gk)){e.x=nx;e.y=ny}else{e.vx=e.vy=0;e.x+=dx/d*sp*dt;e.y+=dy/d*sp*dt}
+ if(e.vx+e.vy>.2)e.front=true;else if(e.vx+e.vy<-.2)e.front=false;
+}
+function char(id,e){
+ const[sx,sy]=iso(e.x,e.y),sit=e.mode==="sit"||e.mode==="phone",fr=Math.floor(T*6)%2,b=sy+4+(sit?4:0),[col,hair]=COL[id];
+ if(!sit){g.fillStyle="rgba(0,0,0,.28)";g.fillRect(sx-4,sy+3,8,2)}
+ g.fillStyle="#27304a";
+ if(sit)g.fillRect(sx-3,b-3,6,3);else{const w=e.mode==="walk";g.fillRect(sx-3,b-5,2,5-(w&&fr?1:0));g.fillRect(sx+1,b-5,2,5-(w&&!fr?1:0))}
+ g.fillStyle=col;g.fillRect(sx-3,b-12,6,7);g.fillRect(sx-4,b-11,1,5);g.fillRect(sx+3,b-11,1,5);
+ g.fillStyle="#f1c9a5";g.fillRect(sx-3,b-18,6,6);g.fillStyle=hair;g.fillRect(sx-3,b-20,6,2);
+ if(!e.front)g.fillRect(sx-3,b-18,6,5);else{g.fillRect(sx-3,b-18,1,2);g.fillRect(sx+2,b-18,1,2);g.fillStyle="#222";g.fillRect(sx-2,b-15,1,1);g.fillRect(sx+1,b-15,1,1)}
+ if(e.mode==="phone"){g.fillStyle="#9ee8ff";g.fillRect(sx+2,b-10,2,3)}
+ if(e.mode==="play"){g.fillStyle=fr?"#fff":"#ff6fa8";g.fillRect(sx-2,b-9,4,2)}
+ if(e.mode==="sit"&&e.s==="working"&&fr){g.fillStyle=col;g.fillRect(sx-4,b-8,1,2)}
+}
+function label(id,name,e,s,log){
+ let L=LB[id];if(!L){L=LB[id]=document.createElement("div");L.className="lb";L.innerHTML='<div class="bub" hidden></div><div class="tag"><i></i><b></b></div>';$("office").appendChild(L)}
+ L.hidden=e.hidden;if(e.hidden)return;
+ const[sx,sy]=iso(e.x,e.y),sit=e.mode==="sit"||e.mode==="phone";
+ L.style.left=sx/W*100+"%";L.style.top=(sy-18+(sit?4:0))/H*100+"%";L.dataset.s=s;
+ L.querySelector("b").textContent=name;const b=L.querySelector(".bub");b.textContent=log||"";b.hidden=!(log&&(s==="working"||s==="waiting"||s==="stuck"));
+}
+const CEO={x:3,y:2,mode:"sit",s:"working",front:false,hidden:false};LIT.ceo=true;
+let last=performance.now();
+function loop(tn){
+ const dt=Math.min(.1,(tn-last)/1000);last=tn;T=tn/1000;
+ agents.forEach((a,i)=>{evalA(a,i,tn);step(E[a.id],dt)});
+ g.clearRect(0,0,W,H);g.drawImage(BG,0,0);
+ const all=ITEMS.slice();
+ agents.forEach(a=>{const e=E[a.id];if(e&&!e.hidden)all.push({k:e.x+e.y+.1,f:()=>char(a.id,e)})});
+ all.push({k:CEO.x+CEO.y+.1,f:()=>char("ceo",CEO)});
+ all.sort((p,q)=>p.k-q.k).forEach(o=>o.f());
+ agents.forEach(a=>{const e=E[a.id];if(e)label(a.id,a.name+" · "+a.role,e,e.s,a.last_log)});
+ label("ceo","Kamu · CEO",CEO,"working","");
+ requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+/* ===== Daftar tugas, kirim perintah, data ===== */
+function render(){
+ $("sum").textContent=agents.filter(a=>st(a)==="working").length+" bekerja · "+tasks.filter(t=>t.status==="queued").length+" antre · "+agents.filter(a=>st(a)==="offline").length+" offline";
+ $("list").innerHTML=tasks.length?tasks.map(t=>{const a=agents.find(x=>x.id===t.agent_id),off=a&&st(a)==="offline"&&t.status==="queued",stuck=t.status==="running"&&now()-new Date(t.updated_at||t.created_at)>120000;
+  return`<div class="task"><b>${esc(t.title)}</b><div class="meta"><span>${esc(a?.name)} · ${off?"Agen offline":stuck?"Macet, tidak ada pembaruan":LABEL[t.status]||t.status} · ${ago(t.updated_at||t.created_at)}</span>
+  ${stuck?`<button data-rq="${esc(t.id)}">Antre ulang</button>`:""}${t.status==="needs_approval"?`<span>${t.result_url?`<a href="${esc(t.result_url)}" target="_blank" rel="noopener">Unduh JPG</a> `:""}<button data-ok="${esc(t.id)}">Setujui</button></span>`:t.status==="done"&&t.result_url?`<a href="${esc(t.result_url)}" target="_blank" rel="noopener">Unduh JPG</a>`:""}</div>
+  <div class="bar"><b style="width:${t.progress||0}%"></b></div></div>`}).join(""):'<div class="meta">Belum ada tugas. Kirim perintah pertamamu.</div>';
+}
+$("list").onclick=async e=>{const rq=e.target.dataset.rq;
+ if(rq){if(demo){const t=tasks.find(x=>x.id===rq);t.status="queued";t.updated_at=new Date().toISOString();}
+  else{await sb.from("tasks").update({status:"queued",progress:0,updated_at:new Date().toISOString()}).eq("id",rq);load();}return render();}
+ const id=e.target.dataset.ok;if(!id)return;
+ if(demo){const t=tasks.find(x=>x.id===id);t.status="done";t.updated_at=new Date().toISOString();render();}
+ else{await sb.from("tasks").update({status:"done"}).eq("id",id);load();}};
+$("f").onsubmit=async e=>{e.preventDefault();const title=$("q").value.trim();if(!title)return;
+ const row={agent_id:$("who").value,title,status:"queued",progress:0};$("q").value="";
+ if(demo)tasks.unshift({...row,id:crypto.randomUUID(),created_at:new Date().toISOString()});else await sb.from("tasks").insert(row);
+ render();};
+async function load(){
+ const[a,t]=await Promise.all([sb.from("agents").select("*").order("id"),sb.from("tasks").select("*").order("created_at",{ascending:false}).limit(20)]);
+ agents=a.data||[];tasks=t.data||[];fillWho();render();}
+function fillWho(){if($("who").options.length!==agents.length)$("who").innerHTML=agents.map(a=>`<option value="${esc(a.id)}">${esc(a.name)} (${esc(a.role)})</option>`).join("");}
+if(demo){
+ $("mode").textContent="MODE DEMO · data simulasi, bukan agen nyata";
+ const iso8=ms=>new Date(now()-ms).toISOString();
+ agents=[{id:"bima",name:"Bima",role:"Supervisor",last_heartbeat:iso8(0)},{id:"rina",name:"Rina",role:"Desain Grafis",last_heartbeat:iso8(0)},{id:"dito",name:"Dito",role:"Editor Video",last_heartbeat:iso8(300000)}];
+ tasks=[];fillWho();render();
+ setInterval(()=>{agents.forEach(a=>{if(a.id!=="dito")a.last_heartbeat=iso8(0);
+  const mine=tasks.filter(t=>t.agent_id===a.id&&now()-new Date(a.last_heartbeat)<90000),run=mine.find(t=>t.status==="running");
+  if(run){run.progress=Math.min(100,run.progress+6);run.updated_at=iso8(0);a.last_log=run.progress<50?"Menyusun layout dari template":"Merender JPG resolusi tinggi";
+   if(run.progress>=100){run.status="needs_approval";run.result_url="#";a.last_log="Selesai! Cek hasilnya ya";}}
+  else{const q=mine.reverse().find(t=>t.status==="queued");if(q){q.status="running";q.updated_at=iso8(0);a.last_log="Mulai: "+q.title;}}});render();},2500);
+}else{
+ $("mode").textContent="LIVE · terhubung ke Supabase";$("mode").classList.add("live");
+ sb=supabase.createClient(CFG.url,CFG.key);load();
+ sb.channel("office").on("postgres_changes",{event:"*",schema:"public"},load).subscribe();
+ setInterval(load,15000);
+}
+setInterval(render,5000);
+</script>
+</body>
+</html>
