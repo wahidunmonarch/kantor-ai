@@ -1,1 +1,95 @@
-
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio Desain · Rina</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;800;900&family=Poppins:wght@300;400;500;600&family=Space+Mono&family=Allura&display=swap">
+<style>
+:root{--bg:#0f1a2e;--line:#3a4d70;--text:#e8edf6;--mute:#93a1bb;--work:#4cc9c0;font-family:"Poppins",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}
+header{padding:16px 20px;display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}h1{margin:0;font-size:20px}header span{color:var(--mute);font-size:13px}
+main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;padding:0 20px 24px}@media(max-width:860px){main{grid-template-columns:1fr}}
+canvas{width:100%;max-height:82vh;object-fit:contain;background:#222;border:2px solid var(--line);border-radius:10px}
+aside{display:flex;flex-direction:column;gap:12px}.panel{background:#16233b;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+label{display:block;font-size:12px;color:var(--mute);margin:8px 0 3px}
+input,select,textarea,button{font:inherit;color:inherit;width:100%}input,select,textarea{background:#0f1a2e;border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+button{background:var(--work);color:#08202a;border:0;border-radius:8px;padding:10px;font-weight:600;cursor:pointer;margin-top:8px}
+:focus-visible{outline:2px solid #f2b84b;outline-offset:2px}
+</style>
+</head>
+<body>
+<header><h1>Studio Desain · Rina</h1><span>Foto diproses di browsermu saja dan tidak diunggah ke mana pun.</span></header>
+<main>
+ <canvas id="cv" width="2160" height="2700" aria-label="Pratinjau desain"></canvas>
+ <aside>
+  <div class="panel"><label for="tpl">Template</label><select id="tpl"></select>
+   <label for="p1">Foto 1</label><input id="p1" type="file" accept="image/*">
+   <label for="p2" id="l2">Foto 2</label><input id="p2" type="file" accept="image/*"></div>
+  <div class="panel" id="fields"></div>
+  <button id="dl">Unduh JPG (2160×2700)</button>
+ </aside>
+</main>
+<script>
+const $=id=>document.getElementById(id),W=2160,H=2700,MAR="#8E1301",RED="#E92C30",cv=$("cv"),c=cv.getContext("2d");
+const HEAD='"Montserrat","Poppins",sans-serif',BODY='"Poppins",sans-serif',MONO='"Space Mono",monospace',SCR='"Allura",cursive';
+const logo=new Image();logo.src="logo_putih.png";
+const PH=[null,null];
+function cover(im,x,y,w,h,fx=.5,fy=.5){const s=Math.max(w/im.width,h/im.height),sw=w/s,sh=h/s;c.drawImage(im,(im.width-sw)*fx,(im.height-sh)*fy,sw,sh,x,y,w,h)}
+function wrap(t,x,y,mw,lh){const ws=String(t).split(" ");let l="",n=0;for(const w of ws){const k=l?l+" "+w:w;if(c.measureText(k).width>mw&&l){c.fillText(l,x,y+n*lh);l=w;n++}else l=k}c.fillText(l,x,y+n*lh);return n+1}
+function fit(t,mw,wt,fam,s){do{c.font=wt+" "+s+"px "+fam;s-=4}while(c.measureText(t).width>mw&&s>20);return s+4}
+function icon(k,x,y,s){c.save();c.fillStyle="#fff";c.strokeStyle="#fff";c.lineWidth=s*.09;
+ if(k==="f"){c.beginPath();c.roundRect(x,y,s,s,s*.22);c.fill();c.fillStyle=MAR;c.font="800 "+s*.8+"px "+HEAD;c.textAlign="center";c.fillText("f",x+s*.58,y+s*.88)}
+ else if(k==="i"){c.beginPath();c.roundRect(x+c.lineWidth/2,y+c.lineWidth/2,s-c.lineWidth,s-c.lineWidth,s*.28);c.stroke();c.beginPath();c.arc(x+s/2,y+s/2,s*.22,0,7);c.stroke();c.beginPath();c.arc(x+s*.75,y+s*.25,s*.05,0,7);c.fill()}
+ else{c.beginPath();c.arc(x+s/2,y+s/2,s/2-c.lineWidth/2,0,7);c.stroke();c.beginPath();c.ellipse(x+s/2,y+s/2,s*.2,s/2,0,0,7);c.stroke();c.beginPath();c.moveTo(x,y+s/2);c.lineTo(x+s,y+s/2);c.stroke()}c.restore()}
+function chrome(showLogo=true){
+ if(showLogo&&logo.complete){const w=830;c.drawImage(logo,142,157,w,w*logo.height/logo.width)}
+ const h=Math.round(H*.0415),y=H-h;c.fillStyle=MAR;c.fillRect(0,y,W,h);
+ const s=h*.62,iy=y+(h-s)/2;c.textAlign="left";c.fillStyle="#fff";c.font="700 28px "+HEAD;
+ [["f",142,"SD FASTABIQUL KHAIRAT"],["i",604,"SDFASTKHAIR"],["g",907,"SD.SEKOLAHFASTKHAIR.SCH.ID"]].forEach(([k,x,t])=>{icon(k,x,iy,s);c.fillText(t,x+s+20,y+h/2+11)})}
+/* ===== Template ===== */
+function tBerita(v,p){const im=p[0];
+ c.filter="blur(18px)";cover(im,-40,-40,W+80,H+80);c.filter="none";c.fillStyle="rgba(14,15,22,.74)";c.fillRect(0,0,W,H);
+ c.fillStyle="#C4001A";c.fillRect(.053*W,.548*H,.302*W,.34*H);c.fillRect(.355*W,.7*H,.194*W,.21*H);
+ cover(im,.249*W,.228*H,.651*W,.594*H,.5,.4);
+ c.textAlign="left";c.fillStyle="#f2f2f2";c.letterSpacing="-8px";const s=fit(v.j1,.64*W,800,HEAD,320);c.font="800 "+s+"px "+HEAD;
+ c.fillText(v.j1,.07*W,.264*H);c.fillText(v.j2,.07*W,.346*H);c.fillStyle=RED;c.fillText(v.ak,.07*W,.434*H);c.letterSpacing="0px";
+ c.fillStyle="#fff";c.textAlign="right";c.font="500 70px "+HEAD;c.fillText(v.tgl,.9*W,.17*H);c.textAlign="left";
+ c.font="800 170px "+HEAD;c.fillText(v.no,.083*W,.612*H);c.font="700 58px "+HEAD;const n=wrap(v.lab,.083*W,.652*H,.2*W,64);
+ c.fillStyle="rgba(255,255,255,.7)";c.fillRect(.083*W,.652*H+n*64-20,.04*W,4);c.fillStyle="#fff";c.font="500 40px "+BODY;wrap(v.desk,.083*W,.652*H+n*64+34,.155*W,50);
+ c.font="400 36px "+MONO;c.fillStyle="#eee";wrap(v.tag,.575*W,.865*H,.3*W,46)}
+function tVertikal(v,p){c.fillStyle="#fff";c.fillRect(0,0,W,H);
+ cover(p[0],0,0,.71*W,.965*H);c.fillStyle="#fff";c.fillRect(.71*W,0,.29*W,.63*H);
+ const g=c.createLinearGradient(0,.62*H,0,.965*H);g.addColorStop(0,"rgba(0,40,28,0)");g.addColorStop(1,"rgba(0,18,12,.95)");c.fillStyle=g;c.fillRect(0,.62*H,.318*W,.345*H);
+ const ix=.318*W,iy=.632*H,iw=.682*W,ih=.333*H;cover(p[1]||p[0],ix,iy,iw,ih,.5,.5);c.strokeStyle="#fff";c.lineWidth=8;c.strokeRect(ix,iy,iw,ih);
+ c.fillStyle="#fff";c.textAlign="left";c.font="600 58px "+HEAD;wrap(v.cap,.052*W,.79*H,.26*W,70);c.font="300 62px "+BODY;c.fillText(v.tgl,.052*W,.865*H);
+ c.save();c.fillStyle="#000";c.translate(.884*W,.114*H);c.rotate(Math.PI/2);c.letterSpacing="-6px";const s=fit(v.judul,.43*H,800,HEAD,190);c.font="800 "+s+"px "+HEAD;c.fillText(v.judul,0,0);c.restore();
+ c.save();c.fillStyle="#111";c.translate(.826*W,.152*H);c.rotate(Math.PI/2);c.font="400 46px "+BODY;wrap(v.par,0,0,.46*H,54);c.restore()}
+function tEditorial(v,p){cover(p[0],0,0,W,.35*H);cover(p[1]||p[0],0,.582*H,W,.383*H,.5,.35);c.fillStyle="#fff";c.fillRect(0,.35*H,W,.232*H);
+ c.fillStyle="#921503";c.textAlign="left";c.letterSpacing="-6px";const s=fit(v.j1.length>=v.j2.length?v.j1:v.j2,.4*W,900,HEAD,300);c.font="900 "+s+"px "+HEAD;c.fillText(v.j1,.04*W,.457*H);c.fillText(v.j2,.04*W,.537*H);c.letterSpacing="0px";
+ c.save();c.translate(.14*W,.515*H);c.rotate(-.17);c.font="150px "+SCR;c.lineWidth=14;c.strokeStyle="#fff";c.strokeText(v.scr,0,0);c.fillStyle="#921503";c.fillText(v.scr,0,0);c.restore();
+ c.font="400 42px "+BODY;c.fillStyle="#921503";c.fillText("Story",.634*W,.3965*H*1.0+.0);c.fillText("Feed",.735*W,.3965*H);c.fillText("Reels",.827*W,.3965*H);
+ c.lineWidth=5;c.strokeStyle="#921503";c.beginPath();c.roundRect(.72*W,.375*H,.087*W,.038*H,40);c.stroke();
+ c.font="400 46px "+BODY;wrap(v.par,.633*W,.462*H,.33*W,56)}
+const TPL={
+ berita:{n:"Poster Berita",ph:1,d:tBerita,f:{j1:["Judul baris 1","IMUNISASI"],j2:["Judul baris 2","VAKSIN"],ak:["Kata aksen (merah)","TD"],tgl:["Tanggal","28 Aug 2026"],no:["Nomor","01"],lab:["Label","VAKSINASI ANAK"],desk:["Deskripsi","Lindungi hari ini. Sehat untuk masa depan. Vaksinasi untuk tumbuh lebih kuat."],tag:["Tagline (mono)","SMALL PROTECTION, LASTING IMPACT."]}},
+ vertikal:{n:"Judul Vertikal + Inset",ph:2,d:tVertikal,f:{judul:["Judul","Talent Awaits"],par:["Paragraf","Setiap anak memiliki potensi yang menunggu untuk ditemukan. Afterclass menjadi tempat untuk mengeksplorasi minat, mengembangkan keterampilan, dan bertumbuh dengan percaya diri."],cap:["Caption","Fokus Menuntun Setiap Pilihan"],tgl:["Tanggal","4.8.2026"]}},
+ editorial:{n:"Editorial Pita Putih",ph:2,d:tEditorial,f:{j1:["Judul baris 1","ABOUT"],j2:["Judul baris 2","TODAY"],scr:["Kata script","August"],par:["Paragraf","Awali hari dengan gerak yang menyenangkan. Senam pagi membantu menjaga kebugaran tubuh dan membangun semangat belajar."]}}};
+const VAL={};let cur="berita";
+$("tpl").innerHTML=Object.entries(TPL).map(([k,t])=>`<option value="${k}">${t.n}</option>`).join("");
+function fields(){const t=TPL[cur];VAL[cur]=VAL[cur]||Object.fromEntries(Object.entries(t.f).map(([k,a])=>[k,a[1]]));
+ $("fields").innerHTML=Object.entries(t.f).map(([k,a])=>`<label for="f_${k}">${a[0]}</label><textarea id="f_${k}" rows="${a[1].length>60?3:1}"></textarea>`).join("");
+ Object.keys(t.f).forEach(k=>{const e=$("f_"+k);e.value=VAL[cur][k];e.oninput=()=>{VAL[cur][k]=e.value;draw()}});
+ $("p2").hidden=$("l2").hidden=t.ph<2}
+async function draw(){
+ try{await Promise.all(['800 100px Montserrat','900 100px Montserrat','700 40px Montserrat','400 40px Poppins','400 40px "Space Mono"','100px Allura'].map(f=>document.fonts.load(f)))}catch(e){}
+ c.setTransform(1,0,0,1,0,0);c.clearRect(0,0,W,H);c.fillStyle="#2a2f3a";c.fillRect(0,0,W,H);
+ if(!PH[0]){c.fillStyle="#93a1bb";c.font="600 70px "+BODY;c.textAlign="center";c.fillText("Pilih Foto 1 untuk mulai",W/2,H/2);chrome(false);return}
+ TPL[cur].d(VAL[cur],PH);chrome()}
+$("tpl").onchange=e=>{cur=e.target.value;fields();draw()};
+[0,1].forEach(i=>$("p"+(i+1)).onchange=e=>{const f=e.target.files[0];if(!f)return;const im=new Image();im.onload=()=>{PH[i]=im;draw()};im.src=URL.createObjectURL(f)});
+$("dl").onclick=()=>cv.toBlob(b=>{const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=cur+"-"+Date.now()+".jpg";a.click()},"image/jpeg",.92);
+logo.onload=draw;fields();draw();
+</script>
+</body>
+</html>
